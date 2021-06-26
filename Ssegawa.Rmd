@@ -1,0 +1,197 @@
+---
+title: "RminiProjectSsegawaAbdulKarim"
+author: "Ssegawa AbdulKarim"
+date: "6/25/2021"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+```{r}
+library(readr)
+library(tidyverse)
+library(table1)
+library(readr)
+library(readxl)
+library(stats)
+library(Stat2Data)
+library(ggplot2)
+library(phyloseq)
+library(rmarkdown)
+library(DESeq2)
+library(tinytex)
+```
+
+
+render("Ssegawa.Rmd", output_format = "PDF")
+
+```{r}
+data1 <- read.csv("diabimmune_16s_t1d_metadata.csv",
+              stringsAsFactors = FALSE)
+
+```
+
+# Change structure of categorical variables to factors 
+
+```{r include=FALSE}
+
+data1$Gender <- as.factor(data1$Gender)  
+data1$Case_Control <- as.factor(data1$Case_Control)
+data1$Delivery_Route <- as.factor(data1$Delivery_Route)
+
+```
+
+#Descriptive Statistics
+
+```{r include=TRUE}
+
+summary(data1)
+count <- table(data1$Case_Control, data1$Gender)
+totalprop <- prop.table(count)
+rowprop <- prop.table(count,1)
+columnprop <- prop.table(count,2)
+```
+
+list(Count=count,"Total Percentage"=round(totalprop,3),"Row Percentage"=round(rowprop,3),"Column
+Percentage"=round(columnprop,3))
+
+table1(~ Gender + Delivery_Route + Age_at_Collection | Case_Control, data=data1)
+
+```
+
+
+# Graphics 
+```{r  include=TRUE}
+
+boxplot1 <- boxplot(data1$Age_at_Collection~ data1$Gender, main="A graph showing Age at Collection by Disease Status", xlab="Disease Status", 
+        ylab="Age")
+        
+        boxplot1
+```
+
+```{r}
+ggplot(data1, aes(x =Case_Control ,y= (..count..)/sum(..count..), fill= Gender)) + 
+  geom_bar(position = "dodge", color= "Blue")+
+  scale_y_continuous(labels=scales::percent)+ 
+  labs(title = "Percentage of Disease Status against Gender",
+       y= "Percentage", x= "Disease Status" )+
+  geom_text(stat= "count", aes(label= scales::percent((..count..)/sum(..count..))), position = position_dodge(0.9), size=4, vjust=-0.1)+
+  theme_classic()+
+  scale_fill_brewer(palette = "Spectral")
+```
+
+```{r}
+ggplot(data1, aes(x =Case_Control ,y= (..count..)/sum(..count..), fill= Delivery_Route)) + 
+  geom_bar(position = "dodge", color= "Gray")+
+  scale_y_continuous(labels=scales::percent)+ 
+  labs(title = "Percentage of Disease Status against Delivery Route",
+       y= "Percentage", x= "Disease Status" )+
+  geom_text(stat= "count", aes(label= scales::percent((..count..)/sum(..count..))), position = position_dodge(0.9), size=4, vjust=-0.1)+
+  theme_classic()+
+  scale_fill_manual(name = "", values = c("White", "Black"))
+```
+
+
+```{r}
+
+ggplot(data1, aes(x =Delivery_Route ,y= (..count..)/sum(..count..), fill= Gender)) + 
+  geom_bar(position = "dodge",color= "Grey")+
+  scale_y_continuous(labels=scales::percent)+ 
+  labs(title = "Percentage of Participants by Delivery route and Sex",
+       y= "Percentage", x= "Delivery Route")+
+  geom_text(stat= "count", aes(label= scales::percent((..count..)/sum(..count..))), position = position_dodge(0.9), size=4, vjust=-0.1)+
+  theme_classic()+
+  scale_fill_manual(name = "", values = c("White", "Black")) 
+```
+
+#Test for Associations 
+```{r ,include=TRUE, echo=FALSE, message=FALSE}
+fisher.test(data1$Case_Control, data1$Gender)
+fisher.test(data1$Case_Control, data1$Delivery_Route)
+t.test(data1$Age_at_Collection~data1$Case_Control)
+
+model = glm(data1$Case_Control ~ data1$Gender + data1$Delivery_Route + data1$Age_at_Collection,  family=binomial)
+summary(model)
+```
+----------------------------------------------------
+
+#Import data to create Phyloseq Object
+
+```{r ,include=TRUE, echo=FALSE, message=FALSE}
+library(tidyverse)
+library(tidyr)
+library(dplyr)
+
+taxa <- read_tsv("diabimmune_t1d_16s_otu_table.txt", skip = 1)
+OTU <- taxa %>% select(1:778)
+Taxonomy <- taxa %>% select(`#OTU ID`, ConsensusLineage) %>%
+separate(ConsensusLineage, c("Domain", "Phylum", "Class", "Order", "Family", "Genus", "Species"), sep = ";")
+sampledata <- data1
+
+```
+
+#Required to have similar row names in OTU and taxonomy table
+```{r}
+Taxonomy <- column_to_rownames(Taxonomy, var = "#OTU ID")
+OTU1 <- column_to_rownames(OTU, var = "#OTU ID")
+sampledata <- column_to_rownames(sampledata, var = "Sample_ID")
+```
+
+# Change OTU and taxonomy dataframes to matrices
+```{r}
+OTUmat <- as.matrix(OTU1)
+taxmat <- as.matrix(Taxonomy)
+```
+
+# create phyloseq object
+```{r}
+OTUtd <-  otu_table(OTUmat, taxa_are_rows = TRUE)
+Taxonomytable <-  tax_table(taxmat)
+sampledata1 <-  sample_data(sampledata)
+phseqData = phyloseq(OTUtd, Taxonomytable, sampledata1)
+```
+
+#Validity checks 
+```{r}
+rank_names(phseqData)
+taxa_names(phseqData)
+sample_variables(phseqData)
+```
+
+#Alpha Diversity 
+```{r}
+plot_richness(phseqData,x = "Case_Control", color="Delivery_Route", measures= "Chao1")
+plot_richness(phseqData,x = "Gender", color="Case_Control", measures= c("Chao1", "shannon"))
+plot_richness(phseqData,x = "Age_at_Collection", color="Case_Control", measures= "Chao1")
+plot_richness(phseqData,x = "Age_at_Collection", color="Case_Control", measures= "Chao1")
+```
+
+#Ordination Plots 
+```{r}
+ordinate(phseqData, "PCoA", "bray")%>%
+plot_ordination(phseqData, .,color = "Gender", title = "The Diversity of samples Grouped by Gender")+ 
+  theme_classic()
+
+ordinate <- ordinate(phseqData, "PCoA", "bray")
+plot_ordination(phseqData, ordinate,color = "Case_Control", title = "The Diversity of samples Grouped by Disease Status")+ 
+  theme_classic()
+
+ordinate(phseqData, "NMDS", "bray")%>%
+  plot_ordination(phseqData, .,type="taxa", color="Phylum", title = "The Diversity of samples Grouped by Disease Status")+ 
+  theme_classic()
+```
+
+#Differential Abundance (Probably wrong!)
+
+```{r}
+OTUmat <- OTUmat+1
+OTUData = otu_table(OTUmat, taxa_are_rows = TRUE)
+phseqData = phyloseq(OTUData, Taxonomytable, sampledata1)
+deseqData <- phyloseq_to_deseq2(phseqData, ~ Case_Control)
+deseqData2 <- DESeq(deseqData)
+output <- results(deseqData2)
+deseq.output <- as.data.frame(output)
+deseq.output%>% arrange(log2FoldChange, padj)
+
+```
+
